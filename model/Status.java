@@ -1,0 +1,14 @@
+package model;
+
+public enum Status {
+
+    BLOQUEADO,
+    NO_BLOQUEADO,
+    SUSPENDIDO_LISTO,
+    NO_SUSPENDIDO_LISTO,
+    SUSPENDIDO_BLOQUEADO,
+    NO_SUSPENDIDO_BLOQUEADO,
+
+    REANUDADO,
+    NO_REANUDADO
+}
