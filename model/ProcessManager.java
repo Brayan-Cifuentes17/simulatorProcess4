@@ -15,7 +15,7 @@ public class ProcessManager {
         executionLogs = new ArrayList<>();
     }
 
-    // ========== GESTIÓN DE PARTICIONES ==========
+    // particiones
     
     public void addPartition(String name, long size) {
         Partition partition = new Partition(name, size);
@@ -48,7 +48,7 @@ public class ProcessManager {
         return new ArrayList<>(partitions);
     }
 
-    // ========== GESTIÓN DE PROCESOS ==========
+    // procesos
     
     public void addProcess(String name, long time, Status status, long size, Partition partition) {
         Process process = new Process(name, time, status, size, partition);
@@ -111,7 +111,7 @@ public class ProcessManager {
         return new ArrayList<>(initialProcesses);
     }
 
-    // ========== SIMULACIÓN ==========
+    // simulacion
     
     public void runSimulation() {
         executionLogs.clear();
@@ -158,36 +158,36 @@ public class ProcessManager {
             // Tomar el primer proceso de la cola
             Process currentProcess = readyQueue.remove(0);
             
-            // Listo
+        
             addLog(currentProcess, Filter.LISTO);
             
             // Despachar
             addLog(currentProcess, Filter.DESPACHAR);
             
-            // En Ejecución (ANTES de restar el tiempo)
+          
             addLog(currentProcess, Filter.EN_EJECUCION);
             
-            // Consumir quantum e incrementar ciclo
+            
             currentProcess.subtractTime(Constants.QUANTUM_TIME);
             currentProcess.incrementCycle();
             
-            // Verificar si terminó
+           
             if (currentProcess.isFinished()) {
                 addLog(currentProcess, Filter.FINALIZADO);
-                continue; // No volver a la cola
+                continue; 
             }
             
-            // Verificar si está bloqueado
+           
             if (currentProcess.isBlocked()) {
                 addLog(currentProcess, Filter.TRANSICION_BLOQUEO);
                 addLog(currentProcess, Filter.BLOQUEADO);
                 addLog(currentProcess, Filter.DESPERTAR);
-                // Volver a agregar al final de la cola
+               
                 readyQueue.add(currentProcess);
             } else {
-                // Expiración de tiempo (quantum agotado)
+                
                 addLog(currentProcess, Filter.TIEMPO_EXPIRADO);
-                // Volver a agregar al final de la cola (Round Robin)
+               
                 readyQueue.add(currentProcess);
             }
         }
@@ -198,7 +198,7 @@ public class ProcessManager {
         executionLogs.add(log);
     }
 
-    // ========== CONSULTAS DE LOGS ==========
+    // logs
     
     public List<Log> getLogsByFilter(Filter filter) {
         return executionLogs.stream()
@@ -218,19 +218,34 @@ public class ProcessManager {
         return new ArrayList<>(executionLogs);
     }
 
-    // ========== INFORMES ESPECIALES ==========
+    // Informe de finalización de particiones
     
     public List<PartitionFinalizationInfo> getPartitionFinalizationReport() {
         List<PartitionFinalizationInfo> report = new ArrayList<>();
         
         for (Partition partition : partitions) {
-            long totalTime = partition.getTotalExecutionTime();
-            int processCount = partition.getProcessCount();
+            // Obtener solo procesos ejecutables (que caben en la partición)
+            List<Process> executableProcesses = partition.getAssignedProcesses().stream()
+                    .filter(p -> p.getSize() <= partition.getSize())
+                    .collect(Collectors.toList());
+            
+            // Calcular tiempo total solo de procesos ejecutables
+            long totalTime = 0;
+            StringBuilder processNames = new StringBuilder();
+            
+            for (int i = 0; i < executableProcesses.size(); i++) {
+                Process p = executableProcesses.get(i);
+                totalTime += p.getOriginalTime();
+                processNames.append(p.getName());
+                if (i < executableProcesses.size() - 1) {
+                    processNames.append(", ");
+                }
+            }
             
             PartitionFinalizationInfo info = new PartitionFinalizationInfo(
                 partition.getName(),
                 partition.getSize(),
-                processCount,
+                processNames.toString().isEmpty() ? "Ninguno" : processNames.toString(),
                 totalTime
             );
             report.add(info);
@@ -246,19 +261,19 @@ public class ProcessManager {
     public static class PartitionFinalizationInfo {
         private String name;
         private long size;
-        private int processCount;
+        private String processNames;
         private long totalTime;
 
-        public PartitionFinalizationInfo(String name, long size, int processCount, long totalTime) {
+        public PartitionFinalizationInfo(String name, long size, String processNames, long totalTime) {
             this.name = name;
             this.size = size;
-            this.processCount = processCount;
+            this.processNames = processNames;
             this.totalTime = totalTime;
         }
 
         public String getName() { return name; }
         public long getSize() { return size; }
-        public int getProcessCount() { return processCount; }
+        public String getProcessNames() { return processNames; }
         public long getTotalTime() { return totalTime; }
     }
 

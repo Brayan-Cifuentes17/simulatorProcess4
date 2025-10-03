@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 public class ProcessSimulatorGUI extends JFrame implements ActionListener {
     private ProcessManager processManager;
@@ -118,8 +119,19 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
 
         resultTableModels = new DefaultTableModel[tableNames.length];
         for (int i = 0; i < tableNames.length; i++) {
-            // Tabla especial para Finalización de Particiones
-            if (i == 10) { // FINALIZACION_PARTICIONES
+            // Tabla especial para Particiones (índice 9)
+            if (i == 9) {
+                resultTableModels[i] = new DefaultTableModel(
+                        new String[] { "Partición", "Tamaño", "Procesos Asignados" },
+                        0) {
+                    @Override
+                    public boolean isCellEditable(int row, int column) {
+                        return false;
+                    }
+                };
+            }
+            // Tabla especial para Finalización de Particiones (índice 10)
+            else if (i == 10) {
                 resultTableModels[i] = new DefaultTableModel(
                         new String[] { "Partición", "Tamaño", "Procesos Asignados", "Tiempo Total" },
                         0) {
@@ -965,11 +977,24 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
             resultTableModels[9].setRowCount(0);
             for (Partition p : processManager.getPartitions()) {
                 String formattedSize = numberFormatter.format(p.getSize());
+                
+                // Obtener nombres de procesos ejecutables
+                List<model.Process> executableProcesses = p.getAssignedProcesses().stream()
+                        .filter(proc -> proc.getSize() <= p.getSize())
+                        .collect(Collectors.toList());
+                
+                StringBuilder processNames = new StringBuilder();
+                for (int i = 0; i < executableProcesses.size(); i++) {
+                    processNames.append(executableProcesses.get(i).getName());
+                    if (i < executableProcesses.size() - 1) {
+                        processNames.append(", ");
+                    }
+                }
+                
                 resultTableModels[9].addRow(new Object[] {
                         p.getName(),
                         formattedSize,
-                        p.getProcessCount(),
-                        ""
+                        processNames.toString().isEmpty() ? "Ninguno" : processNames.toString()
                 });
             }
             return;
@@ -987,7 +1012,7 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
                 resultTableModels[10].addRow(new Object[] {
                         info.getName(),
                         formattedSize,
-                        info.getProcessCount(),
+                        info.getProcessNames(),  // ← Ahora muestra nombres en vez de cantidad
                         formattedTime
                 });
             }
