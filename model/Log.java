@@ -4,25 +4,21 @@ public class Log {
     private String processName;
     private long remainingTime;
     private Status status;
+    private long size;
+    private Partition partition;
     private Filter filter;
     private int cycleCount;
     private long timestamp;
-    
-    // Estados de suspensión
-    private Status suspendedReady;
-    private Status suspendedBlocked;
-    private Status resumed;
 
     public Log(Process process, Filter filter) {
         this.processName = process.getName();
         this.remainingTime = process.getRemainingTime();
         this.status = process.getStatus();
+        this.size = process.getSize();
+        this.partition = process.getPartition();
         this.cycleCount = process.getCycleCount();
         this.filter = filter;
         this.timestamp = System.currentTimeMillis();
-        this.suspendedReady = process.getSuspendedReady();
-        this.suspendedBlocked = process.getSuspendedBlocked();
-        this.resumed = process.getResumed();
     }
 
     public String getProcessName() {
@@ -38,7 +34,19 @@ public class Log {
     }
 
     public String getStatusString() {
-        return status == Status.BLOQUEADO ? "Bloqueado" : "No Bloqueado";
+        return status == Status.BLOQUEADO ? "Bloqueado" : "No bloqueado";
+    }
+
+    public long getSize() {
+        return size;
+    }
+
+    public Partition getPartition() {
+        return partition;
+    }
+
+    public String getPartitionName() {
+        return partition != null ? partition.getName() : "Sin partición";
     }
 
     public Filter getFilter() {
@@ -52,30 +60,6 @@ public class Log {
     public long getTimestamp() {
         return timestamp;
     }
-    
-    public Status getSuspendedReady() {
-        return suspendedReady;
-    }
-    
-    public Status getSuspendedBlocked() {
-        return suspendedBlocked;
-    }
-    
-    public Status getResumed() {
-        return resumed;
-    }
-    
-    public String getSuspendedReadyString() {
-        return suspendedReady == Status.SUSPENDIDO_LISTO ? "Si" : "No";
-    }
-    
-    public String getSuspendedBlockedString() {
-        return suspendedBlocked == Status.SUSPENDIDO_BLOQUEADO ? "Si" : "No";
-    }
-    
-    public String getResumedString() {
-        return resumed == Status.REANUDADO ? "Si" : "No";
-    }
 
     @Override
     public String toString() {
@@ -83,11 +67,10 @@ public class Log {
                 "processName='" + processName + '\'' +
                 ", remainingTime=" + remainingTime +
                 ", status=" + status +
+                ", size=" + size +
+                ", partition=" + (partition != null ? partition.getName() : "null") +
                 ", filter=" + filter +
                 ", cycleCount=" + cycleCount +
-                ", suspendedReady=" + suspendedReady +
-                ", suspendedBlocked=" + suspendedBlocked +
-                ", resumed=" + resumed +
                 '}';
     }
 }

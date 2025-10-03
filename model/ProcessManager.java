@@ -2,27 +2,60 @@ package model;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class ProcessManager {
     private ArrayList<Process> initialProcesses;
+    private ArrayList<Partition> partitions;
     private ArrayList<Log> executionLogs;
 
     public ProcessManager() {
         initialProcesses = new ArrayList<>();
+        partitions = new ArrayList<>();
         executionLogs = new ArrayList<>();
     }
 
-  
-    public void addProcess(String name, long time, Status status) {
-        Process process = new Process(name, time, status);
-        initialProcesses.add(process);
+    // ========== GESTIÓN DE PARTICIONES ==========
+    
+    public void addPartition(String name, long size) {
+        Partition partition = new Partition(name, size);
+        partitions.add(partition);
     }
 
-   
-    public void addProcess(String name, long time, Status status, 
-                          Status suspendedReady, Status suspendedBlocked, Status resumed) {
-        Process process = new Process(name, time, status, suspendedReady, suspendedBlocked, resumed);
+    public boolean partitionExists(String name) {
+        return partitions.stream()
+                .anyMatch(p -> p.getName().equalsIgnoreCase(name.trim()));
+    }
+
+    public void removePartition(String name) {
+        partitions.removeIf(p -> p.getName().equalsIgnoreCase(name.trim()));
+    }
+
+    public Partition findPartitionByName(String name) {
+        return partitions.stream()
+                .filter(p -> p.getName().equalsIgnoreCase(name.trim()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    public boolean hasPartitionAssignedProcesses(String partitionName) {
+        return initialProcesses.stream()
+                .anyMatch(p -> p.getPartition() != null && 
+                         p.getPartition().getName().equalsIgnoreCase(partitionName));
+    }
+
+    public ArrayList<Partition> getPartitions() {
+        return new ArrayList<>(partitions);
+    }
+
+    // ========== GESTIÓN DE PROCESOS ==========
+    
+    public void addProcess(String name, long time, Status status, long size, Partition partition) {
+        Process process = new Process(name, time, status, size, partition);
         initialProcesses.add(process);
+        if (partition != null) {
+            partition.addProcess(process);
+        }
     }
 
     public boolean processExists(String name) {
@@ -31,146 +64,133 @@ public class ProcessManager {
     }
 
     public void removeProcess(String name) {
+        Process process = findProcessByName(name);
+        if (process != null && process.getPartition() != null) {
+            process.getPartition().removeProcess(process);
+        }
         initialProcesses.removeIf(p -> p.getName().equalsIgnoreCase(name.trim()));
     }
 
-   
-    public void editProcess(int position, String processName, long newTime, Status newStatus) {
+    public void editProcess(int position, String processName, long newTime, Status newStatus, 
+                           long newSize, Partition newPartition) {
         if (position >= 0 && position < initialProcesses.size()) {
             Process existingProcess = initialProcesses.get(position);
+            
             if (existingProcess.getName().equalsIgnoreCase(processName)) {
-                Process updatedProcess = new Process(processName, newTime, newStatus);
-                initialProcesses.set(position, updatedProcess);
+                // Remover de la partición anterior
+                if (existingProcess.getPartition() != null) {
+                    existingProcess.getPartition().removeProcess(existingProcess);
+                }
+                
+                // Actualizar datos del proceso
+                existingProcess.setOriginalTime(newTime);
+                existingProcess.setStatus(newStatus);
+                existingProcess.setSize(newSize);
+                existingProcess.setPartition(newPartition);
+                
+                // Agregar a la nueva partición
+                if (newPartition != null) {
+                    newPartition.addProcess(existingProcess);
+                }
             }
         }
     }
 
-    
-    public void editProcess(int position, String processName, long newTime, Status newStatus, 
-                           Status suspendedReady, Status suspendedBlocked, Status resumed) {
-        if (position >= 0 && position < initialProcesses.size()) {
-            Process existingProcess = initialProcesses.get(position);
-            if (existingProcess.getName().equalsIgnoreCase(processName)) {
-                Process updatedProcess = new Process(processName, newTime, newTime, newStatus, 0,
-                                                   suspendedReady, suspendedBlocked, resumed);
-                initialProcesses.set(position, updatedProcess);
-            }
-        }
+    private Process findProcessByName(String name) {
+        return initialProcesses.stream()
+                .filter(p -> p.getName().equalsIgnoreCase(name.trim()))
+                .findFirst()
+                .orElse(null);
     }
 
     public boolean isEmpty() {
         return initialProcesses.isEmpty();
     }
 
+    public ArrayList<Process> getInitialProcesses() {
+        return new ArrayList<>(initialProcesses);
+    }
+
+    // ========== SIMULACIÓN ==========
+    
     public void runSimulation() {
         executionLogs.clear();
         
-       
-        ArrayList<Process> processQueue = cloneProcesses();
-        
-      
-        while (!processQueue.isEmpty()) {
-            Process currentProcess = processQueue.remove(0);
-            executeProcessCycle(currentProcess, processQueue);
-        }
-    }
-
-    private ArrayList<Process> cloneProcesses() {
-        ArrayList<Process> clones = new ArrayList<>();
+        // Registrar procesos iniciales (en orden de entrada, sin ordenar)
         for (Process p : initialProcesses) {
-            clones.add(p.clone());
+            addLog(p, Filter.INICIAL);
         }
-        return clones;
-    }
-
-    private void executeProcessCycle(Process process, ArrayList<Process> queue) {
         
-        addLog(process, Filter.LISTO);
-
-       
-        addLog(process, Filter.DESPACHADO);
-
-       
-        process.subtractTime(Constants.QUANTUM_TIME);
-        process.incrementCycle();
-        addLog(process, Filter.EN_EJECUCION);
-
-       
-        if (process.isFinished()) {
-            addLog(process, Filter.FINALIZADO);
-            return;
-        }
-
-      
-        if (process.isBlocked()) {
-            handleBlockedProcess(process, queue);
-        } else if (process.isSuspendedReady()) {
-            handleSuspendedReadyProcess(process, queue);
-        } else {
-           
-            addLog(process, Filter.TIEMPO_EXPIRADO);
-            queue.add(process);
-        }
-    }
-
-    private void handleBlockedProcess(Process process, ArrayList<Process> queue) {
-    // Registrar que el proceso está bloqueado
-        addLog(process, Filter.BLOQUEAR);
-        addLog(process, Filter.BLOQUEADO);
-        
-        // Caso 1: Proceso bloqueado y suspendido bloqueado
-        if (process.isSuspendedBlocked()) {
-            // Suspender procesos bloqueados
-            addLog(process, Filter.SUSPENDER_BLOQUEADOS);
-            addLog(process, Filter.SUSPENDIDO_BLOQUEADO);
-            
-            // Si también está marcado como suspendido listo, hacer la transición especial
-            if (process.isSuspendedReady()) {
-                // Transición especial: Suspendido Bloqueado → Suspendido Listo
-                addLog(process, Filter.TRANSICION_BLOQUEADO_A_LISTO);
-                addLog(process, Filter.SUSPENDIDO_LISTO);
-                addLog(process, Filter.REANUDAR_LISTOS);
-                queue.add(process);
-
-            } else {
-                // Solo suspendido bloqueado, sin transición a suspendido listo
-                    addLog(process, Filter.REANUDAR_BLOQUEADOS);
-                    // Después de reanudar, sigue como bloqueado y luego despierta
-                    addLog(process, Filter.BLOQUEADO);
-                    addLog(process, Filter.DESPERTAR);
-                    queue.add(process);
-                
+        // Registrar particiones
+        for (Partition part : partitions) {
+            if (!part.getAssignedProcesses().isEmpty()) {
+                Process firstProcess = part.getAssignedProcesses().get(0);
+                addLog(firstProcess, Filter.PARTICIONES);
             }
         }
-        // Caso 2: Proceso bloqueado y suspendido listo (pero NO suspendido bloqueado)
-        else if (process.isSuspendedReady()) {
-            // Primero despierta del bloqueo
-            addLog(process, Filter.DESPERTAR);
-            addLog(process, Filter.LISTO);
-            // Luego se suspende como listo
-            addLog(process, Filter.DE_LISTO_A_SUSPENDIDO);
-            addLog(process, Filter.SUSPENDIDO_LISTO);
-            
-            addLog(process, Filter.REANUDAR_LISTOS);
-               
-            queue.add(process);
-            
+        
+        // Separar procesos ejecutables de no ejecutables
+        ArrayList<Process> executableProcesses = new ArrayList<>();
+        
+        for (Process p : initialProcesses) {
+            if (!p.fitsInPartition()) {
+                // No cabe en la partición -> No ejecutado
+                addLog(p, Filter.NO_EJECUTADO);
+            } else {
+                // Clonar el proceso para la simulación
+                executableProcesses.add(p.clone());
+            }
         }
-        // Caso 3: Proceso bloqueado normal (sin suspensiones)
-        else {
-            // Simplemente despierta y vuelve a la cola
-            addLog(process, Filter.DESPERTAR);
-            queue.add(process);
-        }
+        
+        // ORDENAR GLOBALMENTE UNA SOLA VEZ por tiempo (menor a mayor)
+        // Todos los procesos juntos, sin importar la partición
+        executableProcesses.sort((p1, p2) -> Long.compare(p1.getOriginalTime(), p2.getOriginalTime()));
+        
+        // Crear cola global de procesos listos para Round Robin
+        ArrayList<Process> readyQueue = new ArrayList<>(executableProcesses);
+        
+        // Ejecutar Round Robin global (todos los procesos juntos)
+        executeRoundRobin(readyQueue);
     }
 
-    private void handleSuspendedReadyProcess(Process process, ArrayList<Process> queue) {
-        
-        addLog(process, Filter.SUSPENDER_LISTOS);
-        addLog(process, Filter.SUSPENDIDO_LISTO);
-        
-        addLog(process, Filter.REANUDAR_LISTOS);
-         queue.add(process);
+    private void executeRoundRobin(ArrayList<Process> readyQueue) {
+        while (!readyQueue.isEmpty()) {
+            // Tomar el primer proceso de la cola
+            Process currentProcess = readyQueue.remove(0);
+            
+            // Listo
+            addLog(currentProcess, Filter.LISTO);
+            
+            // Despachar
+            addLog(currentProcess, Filter.DESPACHAR);
+            
+            // En Ejecución (ANTES de restar el tiempo)
+            addLog(currentProcess, Filter.EN_EJECUCION);
+            
+            // Consumir quantum e incrementar ciclo
+            currentProcess.subtractTime(Constants.QUANTUM_TIME);
+            currentProcess.incrementCycle();
+            
+            // Verificar si terminó
+            if (currentProcess.isFinished()) {
+                addLog(currentProcess, Filter.FINALIZADO);
+                continue; // No volver a la cola
+            }
+            
+            // Verificar si está bloqueado
+            if (currentProcess.isBlocked()) {
+                addLog(currentProcess, Filter.TRANSICION_BLOQUEO);
+                addLog(currentProcess, Filter.BLOQUEADO);
+                addLog(currentProcess, Filter.DESPERTAR);
+                // Volver a agregar al final de la cola
+                readyQueue.add(currentProcess);
+            } else {
+                // Expiración de tiempo (quantum agotado)
+                addLog(currentProcess, Filter.TIEMPO_EXPIRADO);
+                // Volver a agregar al final de la cola (Round Robin)
+                readyQueue.add(currentProcess);
+            }
+        }
     }
 
     private void addLog(Process process, Filter filter) {
@@ -178,149 +198,75 @@ public class ProcessManager {
         executionLogs.add(log);
     }
 
+    // ========== CONSULTAS DE LOGS ==========
+    
     public List<Log> getLogsByFilter(Filter filter) {
-        if (filter == Filter.TODO) {
-            return new ArrayList<>(executionLogs);
-        }
-        
         return executionLogs.stream()
                 .filter(log -> log.getFilter() == filter)
-                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+                .collect(Collectors.toList());
     }
 
-    
-    public List<Process> getSuspendedReadyProcesses() {
-        return initialProcesses.stream()
-                .filter(Process::isSuspendedReady)
-                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
-    }
-
-    public List<Process> getSuspendedBlockedProcesses() {
-        return initialProcesses.stream()
-                .filter(Process::isSuspendedBlocked)
-                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
-    }
-
-    public List<Process> getResumedProcesses() {
-        return initialProcesses.stream()
-                .filter(Process::isResumed)
-                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
-    }
-
-    
-    public List<Process> getSuspendedReadyFromLogs() {
-        List<Process> suspendedProcesses = new ArrayList<>();
-        List<Log> suspendedLogs = getLogsByFilter(Filter.SUSPENDIDO_LISTO);
-        
-        for (Log log : suspendedLogs) {
-            Process originalProcess = findProcessByName(log.getProcessName());
-            if (originalProcess != null) {
-                Process suspendedProcess = new Process(
-                    log.getProcessName(),
-                    originalProcess.getOriginalTime(),
-                    log.getRemainingTime(),
-                    log.getStatus(),
-                    log.getCycleCount(),
-                    log.getSuspendedReady(),
-                    log.getSuspendedBlocked(),
-                    log.getResumed()
-                );
-                suspendedProcesses.add(suspendedProcess);
-            }
-        }
-        
-        return suspendedProcesses;
-    }
-
-    public List<Process> getSuspendedBlockedFromLogs() {
-        List<Process> suspendedProcesses = new ArrayList<>();
-        List<Log> suspendedLogs = getLogsByFilter(Filter.SUSPENDIDO_BLOQUEADO);
-        
-        for (Log log : suspendedLogs) {
-            Process originalProcess = findProcessByName(log.getProcessName());
-            if (originalProcess != null) {
-                Process suspendedProcess = new Process(
-                    log.getProcessName(),
-                    originalProcess.getOriginalTime(),
-                    log.getRemainingTime(),
-                    log.getStatus(),
-                    log.getCycleCount(),
-                    log.getSuspendedReady(),
-                    log.getSuspendedBlocked(),
-                    log.getResumed()
-                );
-                suspendedProcesses.add(suspendedProcess);
-            }
-        }
-        
-        return suspendedProcesses;
-    }
-
-    public List<Process> getResumedFromLogs() {
-        List<Process> resumedProcesses = new ArrayList<>();
-        
-        
-        List<Log> resumedReadyLogs = getLogsByFilter(Filter.REANUDAR_LISTOS);
-        List<Log> resumedBlockedLogs = getLogsByFilter(Filter.REANUDAR_BLOQUEADOS);
-        
-        
-        for (Log log : resumedReadyLogs) {
-            Process originalProcess = findProcessByName(log.getProcessName());
-            if (originalProcess != null) {
-                Process resumedProcess = new Process(
-                    log.getProcessName(),
-                    originalProcess.getOriginalTime(),
-                    log.getRemainingTime(),
-                    log.getStatus(),
-                    log.getCycleCount(),
-                    log.getSuspendedReady(),
-                    log.getSuspendedBlocked(),
-                    log.getResumed()
-                );
-                resumedProcesses.add(resumedProcess);
-            }
-        }
-        
-       
-        for (Log log : resumedBlockedLogs) {
-            Process originalProcess = findProcessByName(log.getProcessName());
-            if (originalProcess != null) {
-                Process resumedProcess = new Process(
-                    log.getProcessName(),
-                    originalProcess.getOriginalTime(),
-                    log.getRemainingTime(),
-                    log.getStatus(),
-                    log.getCycleCount(),
-                    log.getSuspendedReady(),
-                    log.getSuspendedBlocked(),
-                    log.getResumed()
-                );
-                resumedProcesses.add(resumedProcess);
-            }
-        }
-        
-        return resumedProcesses;
-    }
-
-    private Process findProcessByName(String name) {
-        for (Process p : initialProcesses) {
-            if (p.getName().equals(name)) {
-                return p;
-            }
-        }
-        return null;
-    }
-
-    public ArrayList<Process> getInitialProcesses() {
-        return new ArrayList<>(initialProcesses);
+    public List<Log> getLogsByFilterAndPartition(Filter filter, String partitionName) {
+        return executionLogs.stream()
+                .filter(log -> log.getFilter() == filter && 
+                       log.getPartition() != null &&
+                       log.getPartition().getName().equalsIgnoreCase(partitionName))
+                .collect(Collectors.toList());
     }
 
     public ArrayList<Log> getAllLogs() {
         return new ArrayList<>(executionLogs);
     }
 
+    // ========== INFORMES ESPECIALES ==========
+    
+    public List<PartitionFinalizationInfo> getPartitionFinalizationReport() {
+        List<PartitionFinalizationInfo> report = new ArrayList<>();
+        
+        for (Partition partition : partitions) {
+            long totalTime = partition.getTotalExecutionTime();
+            int processCount = partition.getProcessCount();
+            
+            PartitionFinalizationInfo info = new PartitionFinalizationInfo(
+                partition.getName(),
+                partition.getSize(),
+                processCount,
+                totalTime
+            );
+            report.add(info);
+        }
+        
+        // Ordenar por tiempo total (menor a mayor)
+        report.sort((p1, p2) -> Long.compare(p1.getTotalTime(), p2.getTotalTime()));
+        
+        return report;
+    }
+
+    // Clase interna para el informe de finalización
+    public static class PartitionFinalizationInfo {
+        private String name;
+        private long size;
+        private int processCount;
+        private long totalTime;
+
+        public PartitionFinalizationInfo(String name, long size, int processCount, long totalTime) {
+            this.name = name;
+            this.size = size;
+            this.processCount = processCount;
+            this.totalTime = totalTime;
+        }
+
+        public String getName() { return name; }
+        public long getSize() { return size; }
+        public int getProcessCount() { return processCount; }
+        public long getTotalTime() { return totalTime; }
+    }
+
+    // ========== LIMPIEZA ==========
+    
     public void clearAll() {
         initialProcesses.clear();
+        partitions.clear();
         executionLogs.clear();
     }
 

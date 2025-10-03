@@ -5,46 +5,29 @@ public class Process {
     private long originalTime;
     private long remainingTime;
     private Status status; 
+    private long size;
+    private Partition partition;
     private int cycleCount;
-    
-   
-    private Status suspendedReady;    // SUSPENDIDO_LISTO o NO_SUSPENDIDO_LISTO
-    private Status suspendedBlocked;  // SUSPENDIDO_BLOQUEADO o NO_SUSPENDIDO_BLOQUEADO
-    private Status resumed;           // REANUDADO o NO_REANUDADO
 
-    public Process(String name, long time, Status status) {
+    public Process(String name, long time, Status status, long size, Partition partition) {
         this.name = name;
         this.originalTime = time;
         this.remainingTime = time;
         this.status = status;
+        this.size = size;
+        this.partition = partition;
         this.cycleCount = 0;
-        this.suspendedReady = Status.NO_SUSPENDIDO_LISTO;
-        this.suspendedBlocked = Status.NO_SUSPENDIDO_BLOQUEADO;
-        this.resumed = Status.NO_REANUDADO;
-    }
-    
-    public Process(String name, long time, Status status, 
-                   Status suspendedReady, Status suspendedBlocked, Status resumed) {
-        this.name = name;
-        this.originalTime = time;
-        this.remainingTime = time;
-        this.status = status;
-        this.cycleCount = 0;
-        this.suspendedReady = suspendedReady;
-        this.suspendedBlocked = suspendedBlocked;
-        this.resumed = resumed;
     }
 
-    public Process(String name, long originalTime, long remainingTime, Status status, int cycleCount,
-                   Status suspendedReady, Status suspendedBlocked, Status resumed) {
+    public Process(String name, long originalTime, long remainingTime, Status status, 
+                   long size, Partition partition, int cycleCount) {
         this.name = name;
         this.originalTime = originalTime;
         this.remainingTime = remainingTime;
         this.status = status;
+        this.size = size;
+        this.partition = partition;
         this.cycleCount = cycleCount;
-        this.suspendedReady = suspendedReady;
-        this.suspendedBlocked = suspendedBlocked;
-        this.resumed = resumed;
     }
 
     public void subtractTime(long time) {
@@ -66,23 +49,15 @@ public class Process {
         return status == Status.BLOQUEADO;
     }
 
-    public boolean isSuspendedReady() {
-        return suspendedReady == Status.SUSPENDIDO_LISTO;
-    }
-    
-    public boolean isSuspendedBlocked() {
-        return suspendedBlocked == Status.SUSPENDIDO_BLOQUEADO;
-    }
-
-    public boolean isResumed() {
-        return resumed == Status.REANUDADO;
+    public boolean fitsInPartition() {
+        return partition != null && size <= partition.getSize();
     }
 
     public void resetTime() {
         remainingTime = originalTime;
     }
 
-
+    // Getters
     public String getName() {
         return name;
     }
@@ -99,39 +74,23 @@ public class Process {
         return status;
     }
 
+    public long getSize() {
+        return size;
+    }
+
+    public Partition getPartition() {
+        return partition;
+    }
+
     public int getCycleCount() {
         return cycleCount;
     }
 
     public String getStatusString() {
-        return status == Status.BLOQUEADO ? "Bloqueado" : "No Bloqueado";
+        return status == Status.BLOQUEADO ? "Bloqueado" : "No bloqueado";
     }
 
-    public Status getSuspendedReady() {
-        return suspendedReady;
-    }
-    
-    public Status getSuspendedBlocked() {
-        return suspendedBlocked;
-    }
-
-    public Status getResumed() {
-        return resumed;
-    }
-
-    public String getSuspendedReadyString() {
-        return suspendedReady == Status.SUSPENDIDO_LISTO ? "Si" : "No";
-    }
-    
-    public String getSuspendedBlockedString() {
-        return suspendedBlocked == Status.SUSPENDIDO_BLOQUEADO ? "Si" : "No";
-    }
-
-    public String getResumedString() {
-        return resumed == Status.REANUDADO ? "Si" : "No";
-    }
-
-  
+    // Setters
     public void setName(String name) {
         this.name = name;
     }
@@ -145,25 +104,20 @@ public class Process {
         this.status = status;
     }
 
+    public void setSize(long size) {
+        this.size = size;
+    }
+
+    public void setPartition(Partition partition) {
+        this.partition = partition;
+    }
+
     public void setCycleCount(int cycleCount) {
         this.cycleCount = cycleCount;
     }
 
-    public void setSuspendedReady(Status suspendedReady) {
-        this.suspendedReady = suspendedReady;
-    }
-    
-    public void setSuspendedBlocked(Status suspendedBlocked) {
-        this.suspendedBlocked = suspendedBlocked;
-    }
-
-    public void setResumed(Status resumed) {
-        this.resumed = resumed;
-    }
-
     public Process clone() {
-        return new Process(name, originalTime, remainingTime, status, cycleCount,
-                          suspendedReady, suspendedBlocked, resumed);
+        return new Process(name, originalTime, remainingTime, status, size, partition, cycleCount);
     }
 
     @Override
@@ -173,10 +127,9 @@ public class Process {
                 ", originalTime=" + originalTime +
                 ", remainingTime=" + remainingTime +
                 ", status=" + status +
+                ", size=" + size +
+                ", partition=" + (partition != null ? partition.getName() : "null") +
                 ", cycleCount=" + cycleCount +
-                ", suspendedReady=" + suspendedReady +
-                ", suspendedBlocked=" + suspendedBlocked +
-                ", resumed=" + resumed +
                 '}';
     }
 }

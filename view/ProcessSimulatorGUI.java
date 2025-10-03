@@ -17,38 +17,47 @@ import java.util.Locale;
 public class ProcessSimulatorGUI extends JFrame implements ActionListener {
     private ProcessManager processManager;
 
+    // Campos de Procesos
     private JTextField txtProcessName;
     private JTextField txtProcessTime;
+    private JTextField txtProcessSize;
     private JComboBox<String> cmbStatus;
-    private JComboBox<String> cmbSuspendedReady;
-    private JComboBox<String> cmbSuspendedBlocked;
-    private JComboBox<String> cmbResumed;
+    private JComboBox<Partition> cmbPartition;
 
+    // Campos de Particiones
+    private JTextField txtPartitionName;
+    private JTextField txtPartitionSize;
+
+    // Tablas
     private DefaultTableModel processTableModel;
     private JTable processTable;
+    private DefaultTableModel partitionTableModel;
+    private JTable partitionTable;
 
+    // Panel de resultados
     private JPanel resultsPanel;
     private CardLayout cardLayout;
 
     private DefaultTableModel[] resultTableModels;
     private String[] tableNames = {
             "Inicial", "Listo", "Despachar", "En Ejecución",
-            "Expiracion de Tiempo","Espera de E/S", "Bloqueado", "<html>Terminacion de operacion<br>E/S o evento-De Bloqueo a Listo</html>", "Salidas",
-            "<html>Suspender de Ejecucion <br> a Suspendido Listo</html>", "Suspendido Listo", "Reanudar a listo", "De Listo a Suspendido Listo",
-            "<html>Suspender de bloqueado <br> a suspendido bloqueado</html>", "Suspendido Bloqueado", "Reanudar a Bloqueado",
-            "<html>Term.de operacion E/S o evento <br> de Susp.bloqueado a Susp.Listo</html>"
+            "Expiración de Tiempo", "Espera de E/S", "Bloqueado", 
+            "Terminación de operación E/S", "Salidas",
+            "Particiones", "Finalización de Particiones", "No Ejecutados"
     };
 
     private Filter[] filters = {
-            Filter.INICIAL, Filter.LISTO, Filter.DESPACHADO, Filter.EN_EJECUCION,
-            Filter.TIEMPO_EXPIRADO,Filter.BLOQUEAR, Filter.BLOQUEADO, Filter.DESPERTAR, Filter.FINALIZADO,
-            Filter.SUSPENDER_LISTOS, Filter.SUSPENDIDO_LISTO, Filter.REANUDAR_LISTOS,Filter.DE_LISTO_A_SUSPENDIDO,
-            Filter.SUSPENDER_BLOQUEADOS, Filter.SUSPENDIDO_BLOQUEADO, Filter.REANUDAR_BLOQUEADOS,
-            Filter.TRANSICION_BLOQUEADO_A_LISTO
+            Filter.INICIAL, Filter.LISTO, Filter.DESPACHAR, Filter.EN_EJECUCION,
+            Filter.TIEMPO_EXPIRADO, Filter.TRANSICION_BLOQUEO, Filter.BLOQUEADO, 
+            Filter.DESPERTAR, Filter.FINALIZADO,
+            Filter.PARTICIONES, Filter.FINALIZACION_PARTICIONES, Filter.NO_EJECUTADO
     };
 
     private String currentAction;
     private NumberFormat numberFormatter;
+    
+    // ComboBox para filtro de particiones en Listo
+    private JComboBox<String> cmbPartitionFilter;
 
     public ProcessSimulatorGUI() {
         processManager = new ProcessManager();
@@ -64,17 +73,24 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
     private void initializeComponents() {
         setExtendedState(JFrame.MAXIMIZED_BOTH);
 
+        // Campos de Procesos
         txtProcessName = new JTextField(15);
         txtProcessTime = new JTextField(15);
-        cmbStatus = new JComboBox<>(new String[] { "No Bloqueado", "Bloqueado" });
-        cmbSuspendedReady = new JComboBox<>(new String[] { "No", "Si" });
-        cmbSuspendedBlocked = new JComboBox<>(new String[] { "No", "Si" });
-        cmbResumed = new JComboBox<>(new String[] { "No", "Si" });
+        txtProcessSize = new JTextField(15);
+        cmbStatus = new JComboBox<>(new String[] { "No bloqueado", "Bloqueado" });
+        cmbPartition = new JComboBox<>();
 
-        setupTimeField();
+        setupTimeField(txtProcessTime);
+        setupTimeField(txtProcessSize);
 
+        // Campos de Particiones
+        txtPartitionName = new JTextField(15);
+        txtPartitionSize = new JTextField(15);
+        setupTimeField(txtPartitionSize);
+
+        // Tabla de Procesos
         processTableModel = new DefaultTableModel(
-                new String[] { "Nombre", "Tiempo", "Estado", "Suspendido Listo", "Suspendido Bloqueado", "Reanudado" },
+                new String[] { "Nombre", "Tiempo", "Estado", "Tamaño", "Partición" },
                 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -84,30 +100,58 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         processTable = new JTable(processTableModel);
         processTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
+        // Tabla de Particiones
+        partitionTableModel = new DefaultTableModel(
+                new String[] { "Nombre", "Tamaño", "Procesos Asignados" },
+                0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        partitionTable = new JTable(partitionTableModel);
+        partitionTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+        // Panel de resultados
         cardLayout = new CardLayout();
         resultsPanel = new JPanel(cardLayout);
 
         resultTableModels = new DefaultTableModel[tableNames.length];
         for (int i = 0; i < tableNames.length; i++) {
-            resultTableModels[i] = new DefaultTableModel(
-                    new String[] { "Proceso", "Tiempo Restante", "Estado", "Suspendido Listo", "Suspendido Bloqueado",
-                            "Reanudado", "Ciclos" },
-                    0) {
-                @Override
-                public boolean isCellEditable(int row, int column) {
-                    return false;
-                }
-            };
+            // Tabla especial para Finalización de Particiones
+            if (i == 10) { // FINALIZACION_PARTICIONES
+                resultTableModels[i] = new DefaultTableModel(
+                        new String[] { "Partición", "Tamaño", "Procesos Asignados", "Tiempo Total" },
+                        0) {
+                    @Override
+                    public boolean isCellEditable(int row, int column) {
+                        return false;
+                    }
+                };
+            } else {
+                resultTableModels[i] = new DefaultTableModel(
+                        new String[] { "Proceso", "Tiempo Restante", "Estado", "Tamaño", "Partición", "Ciclos" },
+                        0) {
+                    @Override
+                    public boolean isCellEditable(int row, int column) {
+                        return false;
+                    }
+                };
+            }
 
             JTable table = new JTable(resultTableModels[i]);
             table.setFont(new Font("Arial", Font.PLAIN, 14));
             JScrollPane scrollPane = new JScrollPane(table);
             resultsPanel.add(scrollPane, tableNames[i]);
         }
+        
+        // ComboBox para filtro de particiones
+        cmbPartitionFilter = new JComboBox<>();
+        cmbPartitionFilter.addItem("Todas las particiones");
     }
 
-    private void setupTimeField() {
-        txtProcessTime.addKeyListener(new KeyListener() {
+    private void setupTimeField(JTextField textField) {
+        textField.addKeyListener(new KeyListener() {
             @Override
             public void keyTyped(KeyEvent e) {
                 char c = e.getKeyChar();
@@ -118,7 +162,7 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
 
                 if (Character.isDigit(c)) {
                     SwingUtilities.invokeLater(() -> {
-                        formatTimeFieldInRealTime();
+                        formatTimeFieldInRealTime(textField);
                     });
                 }
             }
@@ -129,13 +173,13 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
 
             @Override
             public void keyReleased(KeyEvent e) {
-                formatTimeFieldInRealTime();
+                formatTimeFieldInRealTime(textField);
             }
         });
     }
 
-    private void formatTimeFieldInRealTime() {
-        String text = txtProcessTime.getText().replaceAll("[^0-9]", "");
+    private void formatTimeFieldInRealTime(JTextField textField) {
+        String text = textField.getText().replaceAll("[^0-9]", "");
         if (!text.isEmpty()) {
             try {
                 String displayText = text;
@@ -156,15 +200,15 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
                     displayText = numberFormatter.format(number);
                 }
 
-                if (!txtProcessTime.getText().equals(displayText)) {
-                    int caretPos = txtProcessTime.getCaretPosition();
-                    txtProcessTime.setText(displayText);
+                if (!textField.getText().equals(displayText)) {
+                    int caretPos = textField.getCaretPosition();
+                    textField.setText(displayText);
                     try {
                         int newCaretPos = Math.min(caretPos + (displayText.length() - text.length()),
                                 displayText.length());
-                        txtProcessTime.setCaretPosition(newCaretPos);
+                        textField.setCaretPosition(newCaretPos);
                     } catch (IllegalArgumentException ex) {
-                        txtProcessTime.setCaretPosition(displayText.length());
+                        textField.setCaretPosition(displayText.length());
                     }
                 }
             } catch (NumberFormatException ex) {
@@ -179,13 +223,13 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
                         count++;
                     }
 
-                    if (!txtProcessTime.getText().equals(formatted.toString())) {
-                        int caretPos = txtProcessTime.getCaretPosition();
-                        txtProcessTime.setText(formatted.toString());
+                    if (!textField.getText().equals(formatted.toString())) {
+                        int caretPos = textField.getCaretPosition();
+                        textField.setText(formatted.toString());
                         try {
-                            txtProcessTime.setCaretPosition(Math.min(caretPos, formatted.length()));
+                            textField.setCaretPosition(Math.min(caretPos, formatted.length()));
                         } catch (IllegalArgumentException ex2) {
-                            txtProcessTime.setCaretPosition(formatted.length());
+                            textField.setCaretPosition(formatted.length());
                         }
                     }
                 }
@@ -215,12 +259,8 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         return Long.parseLong(numbersOnly);
     }
 
-    private long parseTimeField() throws NumberFormatException {
-        return parseTimeWithTrick(txtProcessTime.getText());
-    }
-
-    private long parseTimeFieldForDialog(JTextField timeField) throws NumberFormatException {
-        return parseTimeWithTrick(timeField.getText());
+    private long parseTimeField(JTextField field) throws NumberFormatException {
+        return parseTimeWithTrick(field.getText());
     }
 
     private void setupLayout() {
@@ -228,25 +268,24 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
 
         JPanel titlePanel = new JPanel();
         titlePanel.setBackground(new Color(44, 62, 80));
-        JLabel titleLabel = new JLabel("SIMULADOR DE PROCESOS");
+        JLabel titleLabel = new JLabel("SIMULADOR DE PROCESOS CON PARTICIONES");
         titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
         titleLabel.setForeground(Color.WHITE);
         titlePanel.add(titleLabel);
 
-        JPanel leftPanel = new JPanel(new BorderLayout());
-        leftPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        leftPanel.setPreferredSize(new Dimension(450, 0));
+        // Panel izquierdo con pestañas
+        JTabbedPane leftTabbedPane = new JTabbedPane();
+        leftTabbedPane.setPreferredSize(new Dimension(500, 0));
 
-        JPanel formPanel = createFormPanel();
-        leftPanel.add(formPanel, BorderLayout.NORTH);
+        // Pestaña de Procesos
+        JPanel processesTab = createProcessesTab();
+        leftTabbedPane.addTab("Procesos", processesTab);
 
-        JScrollPane tableScrollPane = new JScrollPane(processTable);
-        tableScrollPane.setPreferredSize(new Dimension(430, 250));
-        leftPanel.add(tableScrollPane, BorderLayout.CENTER);
+        // Pestaña de Particiones
+        JPanel partitionsTab = createPartitionsTab();
+        leftTabbedPane.addTab("Particiones", partitionsTab);
 
-        JPanel actionPanel = createActionPanel();
-        leftPanel.add(actionPanel, BorderLayout.SOUTH);
-
+        // Panel derecho (resultados)
         JPanel rightPanel = new JPanel(new BorderLayout());
         rightPanel.setBorder(BorderFactory.createTitledBorder("Resultados de la Simulación"));
 
@@ -255,16 +294,55 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
 
         rightPanel.add(resultsPanel, BorderLayout.CENTER);
 
+        // Panel de acciones globales
+        JPanel globalActionsPanel = createGlobalActionsPanel();
+
         add(titlePanel, BorderLayout.NORTH);
-        add(leftPanel, BorderLayout.WEST);
+        add(leftTabbedPane, BorderLayout.WEST);
         add(rightPanel, BorderLayout.CENTER);
+        add(globalActionsPanel, BorderLayout.SOUTH);
     }
 
-    private JPanel createFormPanel() {
+    private JPanel createProcessesTab() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        JPanel formPanel = createProcessFormPanel();
+        panel.add(formPanel, BorderLayout.NORTH);
+
+        JScrollPane tableScrollPane = new JScrollPane(processTable);
+        tableScrollPane.setPreferredSize(new Dimension(480, 200));
+        panel.add(tableScrollPane, BorderLayout.CENTER);
+
+        JPanel actionPanel = createProcessActionPanel();
+        panel.add(actionPanel, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    private JPanel createPartitionsTab() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        JPanel formPanel = createPartitionFormPanel();
+        panel.add(formPanel, BorderLayout.NORTH);
+
+        JScrollPane tableScrollPane = new JScrollPane(partitionTable);
+        tableScrollPane.setPreferredSize(new Dimension(480, 200));
+        panel.add(tableScrollPane, BorderLayout.CENTER);
+
+        JPanel actionPanel = createPartitionActionPanel();
+        panel.add(actionPanel, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    private JPanel createProcessFormPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createTitledBorder("Crear Nuevo Proceso"));
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
 
         int row = 0;
 
@@ -284,6 +362,13 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
 
         gbc.gridx = 0;
         gbc.gridy = row;
+        panel.add(new JLabel("Tamaño:"), gbc);
+        gbc.gridx = 1;
+        panel.add(txtProcessSize, gbc);
+        row++;
+
+        gbc.gridx = 0;
+        gbc.gridy = row;
         panel.add(new JLabel("Estado:"), gbc);
         gbc.gridx = 1;
         panel.add(cmbStatus, gbc);
@@ -291,28 +376,36 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
 
         gbc.gridx = 0;
         gbc.gridy = row;
-        panel.add(new JLabel("Suspendido Listo:"), gbc);
+        panel.add(new JLabel("Partición:"), gbc);
         gbc.gridx = 1;
-        panel.add(cmbSuspendedReady, gbc);
-        row++;
-
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel("Suspendido Bloqueado:"), gbc);
-        gbc.gridx = 1;
-        panel.add(cmbSuspendedBlocked, gbc);
-        row++;
-
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel("Reanudado:"), gbc);
-        gbc.gridx = 1;
-        panel.add(cmbResumed, gbc);
+        panel.add(cmbPartition, gbc);
 
         return panel;
     }
 
-    private JPanel createActionPanel() {
+    private JPanel createPartitionFormPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Crear Nueva Partición"));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(new JLabel("Nombre:"), gbc);
+        gbc.gridx = 1;
+        panel.add(txtPartitionName, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        panel.add(new JLabel("Tamaño:"), gbc);
+        gbc.gridx = 1;
+        panel.add(txtPartitionSize, gbc);
+
+        return panel;
+    }
+
+    private JPanel createProcessActionPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
@@ -324,19 +417,76 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         JButton btnAdd = new JButton("Agregar");
         JButton btnEdit = new JButton("Modificar");
         JButton btnDelete = new JButton("Eliminar");
-        JButton btnSimulate = new JButton("Ejecutar Simulación");
-        JButton btnReset = new JButton("Limpiar Todo");
-        JButton btnExit = new JButton("Salir");
-        JButton btnManual = new JButton("Manual de usuario");
 
         Dimension buttonSize = new Dimension(140, 35);
         btnAdd.setPreferredSize(buttonSize);
         btnEdit.setPreferredSize(buttonSize);
         btnDelete.setPreferredSize(buttonSize);
+
+        btnAdd.addActionListener(e -> addProcess());
+        btnEdit.addActionListener(e -> editProcess());
+        btnDelete.addActionListener(e -> deleteProcess());
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(btnAdd, gbc);
+
+        gbc.gridx = 1;
+        gbc.gridy = 0;
+        panel.add(btnEdit, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.gridwidth = 2;
+        panel.add(btnDelete, gbc);
+
+        return panel;
+    }
+
+    private JPanel createPartitionActionPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+
+        JButton btnAdd = new JButton("Agregar");
+        JButton btnDelete = new JButton("Eliminar");
+
+        Dimension buttonSize = new Dimension(140, 35);
+        btnAdd.setPreferredSize(buttonSize);
+        btnDelete.setPreferredSize(buttonSize);
+
+        btnAdd.addActionListener(e -> addPartition());
+        btnDelete.addActionListener(e -> deletePartition());
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(btnAdd, gbc);
+
+        gbc.gridx = 1;
+        gbc.gridy = 0;
+        panel.add(btnDelete, gbc);
+
+        return panel;
+    }
+
+    private JPanel createGlobalActionsPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
+        panel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
+        JButton btnSimulate = new JButton("Ejecutar Simulación");
+        JButton btnReset = new JButton("Limpiar Todo");
+        JButton btnManual = new JButton("Manual de usuario");
+        JButton btnExit = new JButton("Salir");
+
+        Dimension buttonSize = new Dimension(180, 40);
         btnSimulate.setPreferredSize(buttonSize);
         btnReset.setPreferredSize(buttonSize);
-        btnExit.setPreferredSize(buttonSize);
         btnManual.setPreferredSize(buttonSize);
+        btnExit.setPreferredSize(buttonSize);
 
         btnSimulate.setBackground(new Color(46, 125, 50));
         btnSimulate.setForeground(Color.WHITE);
@@ -350,51 +500,25 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         btnExit.setBorderPainted(false);
         btnExit.setFocusPainted(false);
 
-        btnAdd.addActionListener(e -> addProcess());
-        btnEdit.addActionListener(e -> editProcess());
-        btnDelete.addActionListener(e -> deleteProcess());
         btnSimulate.addActionListener(e -> runSimulation());
-        btnExit.addActionListener(e -> System.exit(0));
-        btnManual.addActionListener(e -> openUserManual());
         btnReset.addActionListener(e -> clearAll());
+        btnManual.addActionListener(e -> openUserManual());
+        btnExit.addActionListener(e -> System.exit(0));
 
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        panel.add(btnAdd, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        panel.add(btnEdit, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        panel.add(btnDelete, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 3;
-        panel.add(btnSimulate, gbc);
-
-        gbc.gridx = 1;
-        gbc.gridy = 0;
-        panel.add(btnManual, gbc);
-
-        gbc.gridx = 1;
-        gbc.gridy = 1;
-        panel.add(btnReset, gbc);
-
-        gbc.gridx = 1;
-        gbc.gridy = 2;
-        panel.add(btnExit, gbc);
-
-        gbc.gridx = 1;
-        gbc.gridy = 3;
-        panel.add(Box.createRigidArea(new Dimension(0, 0)), gbc);
+        panel.add(btnSimulate);
+        panel.add(btnReset);
+        panel.add(btnManual);
+        panel.add(btnExit);
 
         return panel;
     }
 
     private JPanel createResultButtonPanel() {
-        JPanel panel = new JPanel(new GridLayout(5, 4, 5, 5));
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        
+        // Panel de botones
+        JPanel buttonPanel = new JPanel(new GridLayout(3, 4, 5, 5));
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
         for (int i = 0; i < tableNames.length; i++) {
             JButton btn = new JButton(tableNames[i]);
@@ -404,19 +528,121 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
                 cardLayout.show(resultsPanel, tableNames[index]);
                 updateResultTable(index);
             });
-            panel.add(btn);
+            buttonPanel.add(btn);
         }
+        
+        mainPanel.add(buttonPanel, BorderLayout.CENTER);
+        
+        // Panel de filtro para Listo
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        filterPanel.add(new JLabel("Filtrar por Partición:"));
+        filterPanel.add(cmbPartitionFilter);
+        
+        JButton btnApplyFilter = new JButton("Aplicar Filtro");
+        btnApplyFilter.addActionListener(e -> applyPartitionFilter());
+        filterPanel.add(btnApplyFilter);
+        
+        mainPanel.add(filterPanel, BorderLayout.SOUTH);
 
-        return panel;
+        return mainPanel;
     }
 
     private void setupEventHandlers() {
-
+        // Eventos ya manejados en los métodos create...
     }
+
+    // ========== GESTIÓN DE PARTICIONES ==========
+
+    private void addPartition() {
+        String name = txtPartitionName.getText().trim();
+        String sizeText = txtPartitionSize.getText().trim();
+
+        if (name.isEmpty()) {
+            showError("El nombre de la partición no puede estar vacío");
+            return;
+        }
+
+        if (processManager.partitionExists(name)) {
+            showError("Ya existe una partición con ese nombre");
+            return;
+        }
+
+        try {
+            long size = parseTimeField(txtPartitionSize);
+            if (size <= 0) {
+                showError("El tamaño debe ser mayor a 0");
+                return;
+            }
+
+            processManager.addPartition(name, size);
+            updatePartitionTable();
+            updatePartitionComboBox();
+            updatePartitionFilterComboBox();
+            clearPartitionForm();
+            showInfo("Partición agregada exitosamente");
+
+        } catch (NumberFormatException ex) {
+            showError("Ingrese un tamaño válido");
+        }
+    }
+
+    private void deletePartition() {
+        int selectedRow = partitionTable.getSelectedRow();
+        if (selectedRow == -1) {
+            showError("Seleccione una partición para eliminar");
+            return;
+        }
+
+        String partitionName = (String) partitionTableModel.getValueAt(selectedRow, 0);
+        
+        if (processManager.hasPartitionAssignedProcesses(partitionName)) {
+            showError("No se puede eliminar la partición '" + partitionName + 
+                     "' porque tiene procesos asignados");
+            return;
+        }
+
+        currentAction = "DELETE_PARTITION:" + partitionName;
+        new CustomDialog(this, "¿Está seguro de que desea eliminar la partición '" + partitionName + "'?",
+                CustomDialog.CONFIRM_TYPE);
+    }
+
+    private void updatePartitionTable() {
+        partitionTableModel.setRowCount(0);
+
+        for (Partition p : processManager.getPartitions()) {
+            String formattedSize = numberFormatter.format(p.getSize());
+            partitionTableModel.addRow(new Object[] {
+                    p.getName(),
+                    formattedSize,
+                    p.getProcessCount()
+            });
+        }
+    }
+
+    private void updatePartitionComboBox() {
+        cmbPartition.removeAllItems();
+        for (Partition p : processManager.getPartitions()) {
+            cmbPartition.addItem(p);
+        }
+    }
+    
+    private void updatePartitionFilterComboBox() {
+        cmbPartitionFilter.removeAllItems();
+        cmbPartitionFilter.addItem("Todas las particiones");
+        for (Partition p : processManager.getPartitions()) {
+            cmbPartitionFilter.addItem(p.getName());
+        }
+    }
+
+    private void clearPartitionForm() {
+        txtPartitionName.setText("");
+        txtPartitionSize.setText("");
+    }
+
+    // ========== GESTIÓN DE PROCESOS ==========
 
     private void addProcess() {
         String name = txtProcessName.getText().trim();
-        String timeText = txtProcessTime.getText().trim();
 
         if (name.isEmpty()) {
             showError("El nombre del proceso no puede estar vacío");
@@ -429,37 +655,31 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         }
 
         try {
-            long time = parseTimeField();
+            long time = parseTimeField(txtProcessTime);
             if (time <= 0) {
                 showError("El tiempo debe ser mayor a 0");
                 return;
             }
 
+            long size = parseTimeField(txtProcessSize);
+            if (size <= 0) {
+                showError("El tamaño debe ser mayor a 0");
+                return;
+            }
+
             Status status = cmbStatus.getSelectedIndex() == 0 ? Status.NO_BLOQUEADO : Status.BLOQUEADO;
+            Partition partition = (Partition) cmbPartition.getSelectedItem();
 
-            Status suspendedReady = cmbSuspendedReady.getSelectedIndex() == 0 ? Status.NO_SUSPENDIDO_LISTO
-                    : Status.SUSPENDIDO_LISTO;
-
-            Status suspendedBlocked = cmbSuspendedBlocked.getSelectedIndex() == 0 ? Status.NO_SUSPENDIDO_BLOQUEADO
-                    : Status.SUSPENDIDO_BLOQUEADO;
-
-            Status resumed = cmbResumed.getSelectedIndex() == 0 ? Status.NO_REANUDADO : Status.REANUDADO;
-
-            if (resumed == Status.REANUDADO &&
-                    suspendedReady == Status.NO_SUSPENDIDO_LISTO &&
-                    suspendedBlocked == Status.NO_SUSPENDIDO_BLOQUEADO) {
-                showError("Un proceso no puede ser reanudado sin estar suspendido");
-                return;
-            }
-            if (suspendedBlocked == Status.SUSPENDIDO_BLOQUEADO && status == Status.NO_BLOQUEADO) {
-                showError("Un proceso no puede marcarse como Suspendido Bloqueado si su estado es No Bloqueado");
+            if (partition == null) {
+                showError("Debe seleccionar una partición");
                 return;
             }
 
-            processManager.addProcess(name, time, status, suspendedReady, suspendedBlocked, resumed);
+            processManager.addProcess(name, time, status, size, partition);
 
             updateProcessTable();
-            clearForm();
+            updatePartitionTable();
+            clearProcessForm();
             showInfo("Proceso agregado exitosamente");
 
         } catch (NumberFormatException ex) {
@@ -493,24 +713,20 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
 
     private JDialog createEditDialog(model.Process process, int selectedRow) {
         JDialog dialog = new JDialog(this, "Modificar Proceso", true);
-
-        // Aplicar el mismo estilo que CustomDialog
-        dialog.setUndecorated(true); // Quitar la decoración del marco
-        dialog.setAlwaysOnTop(true); // Mantener arriba como los otros diálogos
+        dialog.setUndecorated(true);
+        dialog.setAlwaysOnTop(true);
 
         dialog.setLayout(new GridBagLayout());
-        dialog.setSize(450, 400);
+        dialog.setSize(450, 450);
         dialog.setLocationRelativeTo(this);
 
-        // Crear panel principal con el mismo color de fondo que CustomDialog
         JPanel mainPanel = new JPanel(new GridBagLayout());
-        mainPanel.setBackground(new Color(44, 62, 80)); // Mismo color que CustomDialog
+        mainPanel.setBackground(new Color(44, 62, 80));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(8, 10, 8, 10);
 
-        // Título del diálogo
         JLabel titleLabel = new JLabel("Modificar Proceso");
         titleLabel.setFont(new Font("Arial", Font.BOLD, 18));
         titleLabel.setForeground(Color.WHITE);
@@ -522,47 +738,42 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         gbc.insets = new Insets(0, 0, 20, 0);
         mainPanel.add(titleLabel, gbc);
 
-        // Resetear configuración para los campos
         gbc.gridwidth = 1;
         gbc.insets = new Insets(8, 10, 8, 10);
 
-        // Campos del formulario
         JTextField txtEditName = new JTextField(process.getName(), 20);
         txtEditName.setEditable(false);
         txtEditName.setBackground(Color.LIGHT_GRAY);
         txtEditName.setFont(new Font("Arial", Font.PLAIN, 14));
 
-        JTextField txtEditTime = new JTextField(String.valueOf(process.getOriginalTime()), 20);
+        JTextField txtEditTime = new JTextField(numberFormatter.format(process.getOriginalTime()), 20);
         txtEditTime.setFont(new Font("Arial", Font.PLAIN, 14));
+        setupTimeField(txtEditTime);
 
-        JComboBox<String> cmbEditStatus = new JComboBox<>(new String[] { "No Bloqueado", "Bloqueado" });
+        JTextField txtEditSize = new JTextField(numberFormatter.format(process.getSize()), 20);
+        txtEditSize.setFont(new Font("Arial", Font.PLAIN, 14));
+        setupTimeField(txtEditSize);
+
+        JComboBox<String> cmbEditStatus = new JComboBox<>(new String[] { "No bloqueado", "Bloqueado" });
         cmbEditStatus.setSelectedIndex(process.isBlocked() ? 1 : 0);
         cmbEditStatus.setFont(new Font("Arial", Font.PLAIN, 14));
 
-        JComboBox<String> cmbEditSuspendedReady = new JComboBox<>(new String[] { "No", "Si" });
-        cmbEditSuspendedReady.setSelectedIndex(process.isSuspendedReady() ? 1 : 0);
-        cmbEditSuspendedReady.setFont(new Font("Arial", Font.PLAIN, 14));
+        JComboBox<Partition> cmbEditPartition = new JComboBox<>();
+        for (Partition p : processManager.getPartitions()) {
+            cmbEditPartition.addItem(p);
+        }
+        cmbEditPartition.setSelectedItem(process.getPartition());
+        cmbEditPartition.setFont(new Font("Arial", Font.PLAIN, 14));
 
-        JComboBox<String> cmbEditSuspendedBlocked = new JComboBox<>(new String[] { "No", "Si" });
-        cmbEditSuspendedBlocked.setSelectedIndex(process.isSuspendedBlocked() ? 1 : 0);
-        cmbEditSuspendedBlocked.setFont(new Font("Arial", Font.PLAIN, 14));
-
-        JComboBox<String> cmbEditResumed = new JComboBox<>(new String[] { "No", "Si" });
-        cmbEditResumed.setSelectedIndex(process.isResumed() ? 1 : 0);
-        cmbEditResumed.setFont(new Font("Arial", Font.PLAIN, 14));
-
-        // Agregar componentes al panel principal
         int row = 1;
         addDialogComponentStyled(mainPanel, gbc, "Nombre:", txtEditName, row++);
         addDialogComponentStyled(mainPanel, gbc, "Tiempo:", txtEditTime, row++);
+        addDialogComponentStyled(mainPanel, gbc, "Tamaño:", txtEditSize, row++);
         addDialogComponentStyled(mainPanel, gbc, "Estado:", cmbEditStatus, row++);
-        addDialogComponentStyled(mainPanel, gbc, "Suspendido Listo:", cmbEditSuspendedReady, row++);
-        addDialogComponentStyled(mainPanel, gbc, "Suspendido Bloqueado:", cmbEditSuspendedBlocked, row++);
-        addDialogComponentStyled(mainPanel, gbc, "Reanudado:", cmbEditResumed, row++);
+        addDialogComponentStyled(mainPanel, gbc, "Partición:", cmbEditPartition, row++);
 
-        // Panel de botones con el mismo estilo
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 10));
-        buttonPanel.setBackground(new Color(44, 62, 80)); // Mismo fondo
+        buttonPanel.setBackground(new Color(44, 62, 80));
 
         JButton btnSave = new JButton("Guardar");
         JButton btnCancel = new JButton("Cancelar");
@@ -571,7 +782,6 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         btnSave.setPreferredSize(buttonSize);
         btnCancel.setPreferredSize(buttonSize);
 
-        // Estilo de botones similar al CustomDialog
         btnSave.setFont(new Font("Arial", Font.PLAIN, 14));
         btnSave.setBackground(Color.WHITE);
         btnSave.setForeground(new Color(44, 62, 80));
@@ -583,9 +793,8 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         btnCancel.setFocusPainted(false);
 
         btnSave.addActionListener(e -> {
-            if (saveEditedProcess(dialog, process, selectedRow, txtEditTime,
-                    cmbEditStatus, cmbEditSuspendedReady,
-                    cmbEditSuspendedBlocked, cmbEditResumed)) {
+            if (saveEditedProcess(dialog, process, selectedRow, txtEditTime, txtEditSize,
+                    cmbEditStatus, cmbEditPartition)) {
                 dialog.dispose();
             }
         });
@@ -601,10 +810,8 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         gbc.insets = new Insets(20, 10, 10, 10);
         mainPanel.add(buttonPanel, gbc);
 
-        // Agregar el panel principal al diálogo
         dialog.add(mainPanel);
 
-        // Manejador de teclas para Enter y Escape
         dialog.addKeyListener(new KeyListener() {
             @Override
             public void keyPressed(KeyEvent e) {
@@ -640,7 +847,7 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
 
         JLabel label = new JLabel(labelText);
         label.setPreferredSize(new Dimension(140, 25));
-        label.setForeground(Color.WHITE); // Texto blanco para contraste
+        label.setForeground(Color.WHITE);
         label.setFont(new Font("Arial", Font.PLAIN, 14));
         panel.add(label, gbc);
 
@@ -650,57 +857,35 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         panel.add(component, gbc);
     }
 
-    private void addDialogComponent(JDialog dialog, GridBagConstraints gbc, String label, JComponent component,
-            int row) {
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        gbc.gridwidth = 1;
-        gbc.anchor = GridBagConstraints.EAST;
-        gbc.fill = GridBagConstraints.NONE;
-
-        JLabel lblComponent = new JLabel(label);
-        lblComponent.setPreferredSize(new Dimension(140, 25));
-        dialog.add(lblComponent, gbc);
-
-        gbc.gridx = 1;
-        gbc.anchor = GridBagConstraints.WEST;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        dialog.add(component, gbc);
-    }
-
     private boolean saveEditedProcess(JDialog dialog, model.Process originalProcess, int selectedRow,
-            JTextField txtTime, JComboBox<String> cmbStatus,
-            JComboBox<String> cmbSuspendedReady, JComboBox<String> cmbSuspendedBlocked,
-            JComboBox<String> cmbResumed) {
+            JTextField txtTime, JTextField txtSize, JComboBox<String> cmbStatus,
+            JComboBox<Partition> cmbPartition) {
         try {
-            long newTime = parseTimeFieldForDialog(txtTime);
+            long newTime = parseTimeField(txtTime);
             if (newTime <= 0) {
                 showError("El tiempo debe ser mayor a 0");
                 return false;
             }
 
-            Status newStatus = cmbStatus.getSelectedIndex() == 0 ? Status.NO_BLOQUEADO : Status.BLOQUEADO;
-            Status newSuspendedReady = cmbSuspendedReady.getSelectedIndex() == 0 ? Status.NO_SUSPENDIDO_LISTO
-                    : Status.SUSPENDIDO_LISTO;
-            Status newSuspendedBlocked = cmbSuspendedBlocked.getSelectedIndex() == 0 ? Status.NO_SUSPENDIDO_BLOQUEADO
-                    : Status.SUSPENDIDO_BLOQUEADO;
-            Status newResumed = cmbResumed.getSelectedIndex() == 0 ? Status.NO_REANUDADO : Status.REANUDADO;
-
-            if (newResumed == Status.REANUDADO &&
-                    newSuspendedReady == Status.NO_SUSPENDIDO_LISTO &&
-                    newSuspendedBlocked == Status.NO_SUSPENDIDO_BLOQUEADO) {
-                showError("Un proceso no puede ser reanudado sin estar suspendido");
+            long newSize = parseTimeField(txtSize);
+            if (newSize <= 0) {
+                showError("El tamaño debe ser mayor a 0");
                 return false;
             }
-            if (newSuspendedBlocked == Status.SUSPENDIDO_BLOQUEADO && newStatus == Status.NO_BLOQUEADO) {
-                showError("Un proceso no puede marcarse como Suspendido Bloqueado si su estado es No Bloqueado");
+
+            Status newStatus = cmbStatus.getSelectedIndex() == 0 ? Status.NO_BLOQUEADO : Status.BLOQUEADO;
+            Partition newPartition = (Partition) cmbPartition.getSelectedItem();
+
+            if (newPartition == null) {
+                showError("Debe seleccionar una partición");
                 return false;
             }
 
             processManager.editProcess(selectedRow, originalProcess.getName(), newTime, newStatus,
-                    newSuspendedReady, newSuspendedBlocked, newResumed);
+                    newSize, newPartition);
 
             updateProcessTable();
+            updatePartitionTable();
             showInfo("Proceso editado exitosamente");
             return true;
 
@@ -723,9 +908,44 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
                 CustomDialog.CONFIRM_TYPE);
     }
 
+    private void updateProcessTable() {
+        processTableModel.setRowCount(0);
+
+        for (model.Process p : processManager.getInitialProcesses()) {
+            String formattedTime = numberFormatter.format(p.getOriginalTime());
+            String formattedSize = numberFormatter.format(p.getSize());
+            String partitionName = p.getPartition() != null ? p.getPartition().getName() : "Sin partición";
+
+            processTableModel.addRow(new Object[] {
+                    p.getName(),
+                    formattedTime,
+                    p.getStatusString(),
+                    formattedSize,
+                    partitionName
+            });
+        }
+    }
+
+    private void clearProcessForm() {
+        txtProcessName.setText("");
+        txtProcessTime.setText("");
+        txtProcessSize.setText("");
+        cmbStatus.setSelectedIndex(0);
+        if (cmbPartition.getItemCount() > 0) {
+            cmbPartition.setSelectedIndex(0);
+        }
+    }
+
+    // ========== SIMULACIÓN ==========
+
     private void runSimulation() {
         if (processManager.isEmpty()) {
             showError("No hay procesos para simular");
+            return;
+        }
+
+        if (processManager.getPartitions().isEmpty()) {
+            showError("No hay particiones creadas");
             return;
         }
 
@@ -739,73 +959,116 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         showInfo("Simulación ejecutada exitosamente");
     }
 
-    private void updateProcessTable() {
-        processTableModel.setRowCount(0);
-
-        for (model.Process p : processManager.getInitialProcesses()) {
-            String formattedTime = numberFormatter.format(p.getOriginalTime());
-
-            processTableModel.addRow(new Object[] {
-                    p.getName(),
-                    formattedTime,
-                    p.getStatusString(),
-                    p.getSuspendedReadyString(),
-                    p.getSuspendedBlockedString(),
-                    p.getResumedString()
-            });
-        }
-    }
-
     private void updateResultTable(int tableIndex) {
-        if (tableIndex == 0) {
+        // Tabla especial para Particiones (índice 9)
+        if (tableIndex == 9) {
+            resultTableModels[9].setRowCount(0);
+            for (Partition p : processManager.getPartitions()) {
+                String formattedSize = numberFormatter.format(p.getSize());
+                resultTableModels[9].addRow(new Object[] {
+                        p.getName(),
+                        formattedSize,
+                        p.getProcessCount(),
+                        ""
+                });
+            }
+            return;
+        }
 
+        // Tabla especial para Finalización de Particiones (índice 10)
+        if (tableIndex == 10) {
+            resultTableModels[10].setRowCount(0);
+            List<ProcessManager.PartitionFinalizationInfo> report = processManager.getPartitionFinalizationReport();
+            
+            for (ProcessManager.PartitionFinalizationInfo info : report) {
+                String formattedSize = numberFormatter.format(info.getSize());
+                String formattedTime = numberFormatter.format(info.getTotalTime());
+                
+                resultTableModels[10].addRow(new Object[] {
+                        info.getName(),
+                        formattedSize,
+                        info.getProcessCount(),
+                        formattedTime
+                });
+            }
+            return;
+        }
+
+        // Tabla especial para Inicial (índice 0)
+        if (tableIndex == 0) {
             resultTableModels[0].setRowCount(0);
             for (model.Process p : processManager.getInitialProcesses()) {
                 String formattedTime = numberFormatter.format(p.getOriginalTime());
+                String formattedSize = numberFormatter.format(p.getSize());
+                String partitionName = p.getPartition() != null ? p.getPartition().getName() : "Sin partición";
 
                 resultTableModels[0].addRow(new Object[] {
                         p.getName(),
                         formattedTime,
                         p.getStatusString(),
-                        p.getSuspendedReadyString(),
-                        p.getSuspendedBlockedString(),
-                        p.getResumedString(),
+                        formattedSize,
+                        partitionName,
                         0
                 });
             }
+            return;
+        }
+
+        // Resto de tablas (logs)
+        List<Log> logs = processManager.getLogsByFilter(filters[tableIndex]);
+        resultTableModels[tableIndex].setRowCount(0);
+
+        for (Log log : logs) {
+            String formattedTime = numberFormatter.format(log.getRemainingTime());
+            String formattedSize = numberFormatter.format(log.getSize());
+            String partitionName = log.getPartition() != null ? log.getPartition().getName() : "Sin partición";
+
+            resultTableModels[tableIndex].addRow(new Object[] {
+                    log.getProcessName(),
+                    formattedTime,
+                    log.getStatusString(),
+                    formattedSize,
+                    partitionName,
+                    log.getCycleCount()
+            });
+        }
+    }
+
+    private void applyPartitionFilter() {
+        String selectedPartition = (String) cmbPartitionFilter.getSelectedItem();
+        
+        if (selectedPartition == null || selectedPartition.equals("Todas las particiones")) {
+            // Mostrar todos los logs de LISTO
+            updateResultTable(1); // índice 1 es LISTO
         } else {
-
-            List<Log> logs = processManager.getLogsByFilter(filters[tableIndex]);
-            resultTableModels[tableIndex].setRowCount(0);
-
+            // Filtrar por partición específica
+            resultTableModels[1].setRowCount(0);
+            List<Log> logs = processManager.getLogsByFilterAndPartition(Filter.LISTO, selectedPartition);
+            
             for (Log log : logs) {
                 String formattedTime = numberFormatter.format(log.getRemainingTime());
+                String formattedSize = numberFormatter.format(log.getSize());
 
-                resultTableModels[tableIndex].addRow(new Object[] {
+                resultTableModels[1].addRow(new Object[] {
                         log.getProcessName(),
                         formattedTime,
                         log.getStatusString(),
-                        log.getSuspendedReadyString(),
-                        log.getSuspendedBlockedString(),
-                        log.getResumedString(),
+                        formattedSize,
+                        log.getPartitionName(),
                         log.getCycleCount()
                 });
             }
         }
+        
+        // Asegurarse de mostrar la tabla de Listo
+        cardLayout.show(resultsPanel, tableNames[1]);
     }
+
+    // ========== UTILIDADES ==========
 
     private void clearAll() {
         currentAction = "CLEAR_ALL";
-        new CustomDialog(this, "¿Está seguro de que desea eliminar todos los procesos?", CustomDialog.CONFIRM_TYPE);
-    }
-
-    private void clearForm() {
-        txtProcessName.setText("");
-        txtProcessTime.setText("");
-        cmbStatus.setSelectedIndex(0);
-        cmbSuspendedReady.setSelectedIndex(0);
-        cmbSuspendedBlocked.setSelectedIndex(0);
-        cmbResumed.setSelectedIndex(0);
+        new CustomDialog(this, "¿Está seguro de que desea eliminar todos los datos?", CustomDialog.CONFIRM_TYPE);
     }
 
     private void openUserManual() {
@@ -827,7 +1090,7 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
                 } else {
                     showError("Su sistema no permite abrir archivos PDF automáticamente.<br>" +
                             "Por favor, abra manualmente el archivo:<br>" +
-                            "Manual_Usuario_Simulador_Procesos.pdf");
+                            "Manual_Usuario.pdf");
                 }
             } else {
                 showError("Su sistema no permite abrir archivos automáticamente.<br>" +
@@ -855,17 +1118,17 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
         String command = e.getActionCommand();
 
         switch (command) {
-            case Constants.CLOSE_WARNING:
-            case Constants.CLOSE_INFO:
+            case view.Constants.CLOSE_WARNING:
+            case view.Constants.CLOSE_INFO:
                 ((JDialog) ((JButton) e.getSource()).getTopLevelAncestor()).dispose();
                 break;
 
-            case Constants.CONFIRM_YES:
+            case view.Constants.CONFIRM_YES:
                 handleConfirmYes();
                 ((JDialog) ((JButton) e.getSource()).getTopLevelAncestor()).dispose();
                 break;
 
-            case Constants.CONFIRM_NO:
+            case view.Constants.CONFIRM_NO:
                 ((JDialog) ((JButton) e.getSource()).getTopLevelAncestor()).dispose();
                 break;
         }
@@ -877,16 +1140,28 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
                 String processName = currentAction.substring("DELETE_PROCESS:".length());
                 processManager.removeProcess(processName);
                 updateProcessTable();
+                updatePartitionTable();
                 showInfo("Proceso eliminado");
+            } else if (currentAction.startsWith("DELETE_PARTITION:")) {
+                String partitionName = currentAction.substring("DELETE_PARTITION:".length());
+                processManager.removePartition(partitionName);
+                updatePartitionTable();
+                updatePartitionComboBox();
+                updatePartitionFilterComboBox();
+                showInfo("Partición eliminada");
             } else if (currentAction.equals("CLEAR_ALL")) {
                 processManager.clearAll();
                 updateProcessTable();
+                updatePartitionTable();
+                updatePartitionComboBox();
+                updatePartitionFilterComboBox();
 
                 for (DefaultTableModel model : resultTableModels) {
                     model.setRowCount(0);
                 }
 
-                clearForm();
+                clearProcessForm();
+                clearPartitionForm();
                 showInfo("Todos los datos han sido eliminados");
             }
             currentAction = null;

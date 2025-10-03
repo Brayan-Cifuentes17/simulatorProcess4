@@ -1,14 +1,16 @@
 package model;
 
 public enum Status {
+    BLOQUEADO("Bloqueado"), 
+    NO_BLOQUEADO("No bloqueado");
 
-    BLOQUEADO,
-    NO_BLOQUEADO,
-    SUSPENDIDO_LISTO,
-    NO_SUSPENDIDO_LISTO,
-    SUSPENDIDO_BLOQUEADO,
-    NO_SUSPENDIDO_BLOQUEADO,
+    private String value;
 
-    REANUDADO,
-    NO_REANUDADO
+    Status(String value) {
+        this.value = value;
+    }
+
+    public String getValue() {
+        return value;
+    }
 }
