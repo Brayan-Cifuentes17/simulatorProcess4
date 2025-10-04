@@ -43,7 +43,7 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
     private String[] tableNames = {
             "Inicial", "Listo", "Despachar", "En Ejecución",
             "Expiración de Tiempo", "Espera de E/S", "Bloqueado", 
-            "Terminación de operación E/S", "Salidas",
+            "<html>Terminacion de operacion<br>E/S o evento-De Bloqueo a Listo</html>", "Salidas",
             "Particiones", "Finalización de Particiones", "No Ejecutados"
     };
 
@@ -140,7 +140,19 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
                         return false;
                     }
                 };
-            } else {
+            }
+            
+            else if (i == 11) {
+                resultTableModels[i] = new DefaultTableModel(
+                        new String[] { "Proceso", "Tamaño Proceso", "Partición", "Tamaño Partición", "El tamaño del proceso se excede en " },
+                        0) {
+                    @Override
+                    public boolean isCellEditable(int row, int column) {
+                        return false;
+                    }
+                };
+            } 
+            else {
                 resultTableModels[i] = new DefaultTableModel(
                         new String[] { "Proceso", "Tiempo Restante", "Estado", "Tamaño", "Partición", "Ciclos" },
                         0) {
@@ -1018,6 +1030,27 @@ public class ProcessSimulatorGUI extends JFrame implements ActionListener {
             }
             return;
         }
+
+        if (tableIndex == 11) {
+        resultTableModels[11].setRowCount(0);
+        List<Log> logs = processManager.getLogsByFilter(filters[tableIndex]);
+        
+        for (Log log : logs) {
+            String formattedProcessSize = numberFormatter.format(log.getSize());
+            String formattedPartitionSize = numberFormatter.format(log.getPartition().getSize());
+            long exceedBy = log.getSize() - log.getPartition().getSize();
+            String formattedExceedBy = numberFormatter.format(exceedBy);
+            
+            resultTableModels[11].addRow(new Object[] {
+                    log.getProcessName(),
+                    formattedProcessSize,
+                    log.getPartitionName(),
+                    formattedPartitionSize,
+                    formattedExceedBy
+            });
+        }
+        return;
+    }
 
         // Tabla especial para Inicial (índice 0)
         if (tableIndex == 0) {
